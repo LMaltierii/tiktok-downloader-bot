@@ -174,8 +174,6 @@ async def handle_link(msg: types.Message):
             output_template,
             url,
         ]
-    else:
-        #  YouTube / Shorts / Reels
         cmd = [
             "python",
             "-m",
@@ -186,6 +184,8 @@ async def handle_link(msg: types.Message):
             "mp4",
             "--recode-video",
             "mp4",
+            "--postprocessor-args",
+            "ffmpeg:-c:v copy -c:a aac",
             "--no-playlist",
             "-o",
             output_template,
