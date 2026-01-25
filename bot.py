@@ -2,7 +2,6 @@ import asyncio
 import os
 import uuid
 import subprocess
-import shutil
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -16,7 +15,7 @@ dp = Dispatcher()
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-FFMPEG_PATH = "ffmpeg"  # если не работает — напиши полный путь к ffmpeg.exe
+FFMPEG_PATH = r"C:\ffmpeg\bin\ffmpeg.exe"
 
 # ================== KEYBOARDS ==================
 
