@@ -15,8 +15,6 @@ dp = Dispatcher()
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-FFMPEG_PATH = r"C:\ffmpeg\bin\ffmpeg.exe"
-
 # ================== KEYBOARDS ==================
 
 def start_kb():
@@ -75,76 +73,60 @@ async def handle_link(msg: types.Message):
     status = await msg.answer("⏳ Скачиваю...")
 
     uid = str(uuid.uuid4())
-    video_path = os.path.join(DOWNLOAD_DIR, f"{uid}_video.mp4")
-    audio_path = os.path.join(DOWNLOAD_DIR, f"{uid}_audio.m4a")
-    final_path = os.path.join(DOWNLOAD_DIR, f"{uid}.mp4")
+    output_template = os.path.join(DOWNLOAD_DIR, f"{uid}.%(ext)s")
 
-    # 1️⃣ СКАЧИВАЕМ ВИДЕО
-    cmd_video = [
+    cmd = [
         "python", "-m", "yt_dlp",
-        "-f", "bv*",
-        "-o", video_path,
+        "-f", "bestvideo*+bestaudio/best",
+        "--merge-output-format", "mp4",
         "--no-playlist",
-        url
-    ]
-
-    # 2️⃣ СКАЧИВАЕМ АУДИО
-    cmd_audio = [
-        "python", "-m", "yt_dlp",
-        "-f", "ba*",
-        "-o", audio_path,
-        "--no-playlist",
+        "-o", output_template,
         url
     ]
 
     try:
-        subprocess.run(cmd_video, check=True, timeout=300)
-        subprocess.run(cmd_audio, check=True, timeout=300)
-    except:
-        await status.edit_text("❌ Ошибка скачивания потоков.")
+        process = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if process.returncode != 0:
+            print(process.stdout)
+            print(process.stderr)
+            await status.edit_text("❌ Ошибка скачивания.")
+            return
+    except Exception as e:
+        print("ERROR:", e)
+        await status.edit_text("❌ Ошибка скачивания.")
         return
 
-    # 3️⃣ СКЛЕИВАЕМ ЧЕРЕЗ FFMPEG
-    merge_cmd = [
-        FFMPEG_PATH,
-        "-y",
-        "-i", video_path,
-        "-i", audio_path,
-        "-c:v", "copy",
-        "-c:a", "aac",
-        final_path
-    ]
+    # ================= FIND FILE =================
 
-    try:
-        subprocess.run(merge_cmd, check=True, timeout=300)
-    except:
-        await status.edit_text("❌ Ошибка склейки ffmpeg.")
+    final_file = None
+    for f in os.listdir(DOWNLOAD_DIR):
+        if f.startswith(uid) and f.endswith(".mp4"):
+            final_file = os.path.join(DOWNLOAD_DIR, f)
+            break
+
+    if not final_file:
+        await status.edit_text("❌ Файл не найден.")
         return
 
-    if not os.path.exists(final_path):
-        await status.edit_text("❌ Финальный файл не создан.")
-        return
+    # ================= SEND =================
 
-    # 4️⃣ ОТПРАВЛЯЕМ
-    await status.edit_text("📤 Отправляю видео...")
+    await status.edit_text("📤 Отправляю...")
 
     await msg.answer_video(
-        types.FSInputFile(final_path),
+        types.FSInputFile(final_file),
         caption="✅ Готово! Видео со звуком.",
         supports_streaming=True
     )
 
     await msg.answer("⬇️ Хочешь ещё?", reply_markup=after_download_kb())
 
-    # 5️⃣ ЧИСТКА
-    for f in [video_path, audio_path, final_path]:
-        try:
-            os.remove(f)
-        except:
-            pass
-
     try:
         await status.delete()
+    except:
+        pass
+
+    try:
+        os.remove(final_file)
     except:
         pass
 
