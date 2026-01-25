@@ -180,7 +180,7 @@ async def handle_link(msg: types.Message):
         pass
 
     await msg.answer(
-        "✅ *Готово!*\n\n🎬 Видео скачано СО ЗВУКОМ!",
+        "✅ *Готово!*\n\n🎬 Видео скачано",
         reply_markup=after_download_kb(),
         parse_mode="Markdown",
     )
@@ -202,3 +202,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
