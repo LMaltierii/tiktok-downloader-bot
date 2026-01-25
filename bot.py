@@ -48,7 +48,7 @@ async def start(msg: types.Message):
         "• TikTok\n"
         "• YouTube Shorts\n"
         "• Reels\n\n"
-        "Нажми кнопку ниже, чтобы узнать подробнее 👇",
+        "Просто пришли ссылку на видео 👇",
         reply_markup=start_kb(),
         parse_mode="Markdown",
     )
@@ -64,7 +64,7 @@ async def help_download_cb(callback: types.CallbackQuery):
         "1️⃣ Скопируй ссылку на видео\n"
         "2️⃣ Вставь её в этот чат\n"
         "3️⃣ Подожди пару секунд\n"
-        "4️⃣ Получи готовое видео\n\n"
+        "4️⃣ Получи готовое видео со звуком\n\n"
         "⚡ Просто вставь ссылку — и всё!",
         parse_mode="Markdown",
         reply_markup=start_kb(),
@@ -76,15 +76,14 @@ async def help_download_cb(callback: types.CallbackQuery):
 async def help_about_cb(callback: types.CallbackQuery):
     await callback.message.edit_text(
         "ℹ️ *О боте:*\n\n"
-        "🤖 TikTokDBroBot — бот для скачивания коротких видео.\n\n"
+        "🤖 TikTokDBroBot — бот для скачивания видео.\n\n"
         "✅ Поддерживает:\n"
         "• TikTok\n"
         "• YouTube Shorts\n"
         "• Reels\n\n"
         "📏 Ограничения:\n"
-        "• Видео до 120 секунд\n"
-        "• Максимум 720p\n\n"
-        "🚀 Просто вставь ссылку в чат!",
+        "• Видео до 3 минут\n \n"
+        "🚀 Просто вставь ссылку!",
         parse_mode="Markdown",
         reply_markup=start_kb(),
     )
@@ -140,8 +139,7 @@ async def handle_link(msg: types.Message):
 
         if duration > 180:
             await status_msg.edit_text(
-                "⚠️ Поддерживаются только короткие видео (до 180 секунд).\n\n"
-                "Это видео слишком длинное."
+                "⚠️ Поддерживаются только короткие видео (до 3 минут)."
             )
             return
 
@@ -151,7 +149,7 @@ async def handle_link(msg: types.Message):
 
     # ================= DOWNLOAD =================
 
-    await status_msg.edit_text("📥 Скачиваю видео...")
+    await status_msg.edit_text("📥 Скачиваю и склеиваю видео...")
 
     file_id = str(uuid.uuid4())
     output_template = os.path.join(DOWNLOAD_DIR, f"{file_id}.%(ext)s")
@@ -166,6 +164,8 @@ async def handle_link(msg: types.Message):
             "--no-playlist",
             "--merge-output-format",
             "mp4",
+            "--recode-video",
+            "mp4",
             "--user-agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
             "--referer",
@@ -175,13 +175,16 @@ async def handle_link(msg: types.Message):
             url,
         ]
     else:
+        #  YouTube / Shorts / Reels
         cmd = [
             "python",
             "-m",
             "yt_dlp",
             "-f",
-            "bv*[height<=720]+ba/b",
+            "bv*+ba/b",
             "--merge-output-format",
+            "mp4",
+            "--recode-video",
             "mp4",
             "--no-playlist",
             "-o",
@@ -190,7 +193,7 @@ async def handle_link(msg: types.Message):
         ]
 
     try:
-        process = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        process = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
         if process.returncode != 0:
             print(process.stdout)
@@ -207,25 +210,18 @@ async def handle_link(msg: types.Message):
 
     downloaded_file = None
     for f in os.listdir(DOWNLOAD_DIR):
-        if f.startswith(file_id):
+        if f.startswith(file_id) and f.lower().endswith(".mp4"):
             downloaded_file = os.path.join(DOWNLOAD_DIR, f)
             break
 
     if not downloaded_file:
-        await status_msg.edit_text("❌ Файл не найден после скачивания.")
+        await status_msg.edit_text("❌ Не удалось получить mp4 файл.")
         return
-
-    # ================= FORCE MP4 =================
-
-    if not downloaded_file.lower().endswith(".mp4"):
-        new_path = downloaded_file.rsplit(".", 1)[0] + ".mp4"
-        os.rename(downloaded_file, new_path)
-        downloaded_file = new_path
 
     # ================= SIZE CHECK =================
 
     size_mb = os.path.getsize(downloaded_file) / (1024 * 1024)
-    if size_mb > 45:
+    if size_mb > 48:
         os.remove(downloaded_file)
         await status_msg.edit_text("⚠️ Видео слишком большое для Telegram.")
         return
@@ -247,7 +243,7 @@ async def handle_link(msg: types.Message):
         pass
 
     await msg.answer(
-        "✅ *Готово!*\n\n📥 Видео успешно скачано.\n🔗 Хочешь скачать ещё?",
+        "✅ *Готово!*\n\n📥 Видео скачано со звуком.",
         reply_markup=after_download_kb(),
         parse_mode="Markdown",
     )
