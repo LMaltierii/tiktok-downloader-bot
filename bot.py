@@ -82,7 +82,7 @@ async def help_about_cb(callback: types.CallbackQuery):
         "• YouTube Shorts\n"
         "• Reels\n\n"
         "📏 Ограничения:\n"
-        "• Видео до 180 секунд\n"
+        "• Видео до 120 секунд\n"
         "• Максимум 720p\n\n"
         "🚀 Просто вставь ссылку в чат!",
         parse_mode="Markdown",
@@ -180,10 +180,10 @@ async def handle_link(msg: types.Message):
             "-m",
             "yt_dlp",
             "-f",
-            "bv*[ext=mp4][height<=720]+ba[ext=m4a]/b[ext=mp4][height<=720]/best[ext=mp4]",
-            "--no-playlist",
+            "bv*[height<=720]+ba/b",
             "--merge-output-format",
             "mp4",
+            "--no-playlist",
             "-o",
             output_template,
             url,
@@ -270,5 +270,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
-
