@@ -61,10 +61,10 @@ async def start(msg: types.Message):
 async def help_download_cb(callback: types.CallbackQuery):
     await callback.message.edit_text(
         "⬇️ *Как скачать видео:*\n\n"
-        "1️⃣ Скопируй ссылку на видео\n"
-        "2️⃣ Вставь её в этот чат\n"
-        "3️⃣ Подожди пару секунд\n"
-        "4️⃣ Получи готовое видео со звуком\n\n"
+        "1️⃣ Скопируй ссылку\n"
+        "2️⃣ Вставь её в чат\n"
+        "3️⃣ Подожди\n"
+        "4️⃣ Получи MP4 со звуком\n\n"
         "⚡ Просто вставь ссылку — и всё!",
         parse_mode="Markdown",
         reply_markup=start_kb(),
@@ -77,12 +77,8 @@ async def help_about_cb(callback: types.CallbackQuery):
     await callback.message.edit_text(
         "ℹ️ *О боте:*\n\n"
         "🤖 TikTokDBroBot — бот для скачивания видео.\n\n"
-        "✅ Поддерживает:\n"
-        "• TikTok\n"
-        "• YouTube Shorts\n"
-        "• Reels\n\n"
         "📏 Ограничения:\n"
-        "• Видео до 3 минут\n\n"
+        "• До 3 минут\n\n"
         "🚀 Просто вставь ссылку!",
         parse_mode="Markdown",
         reply_markup=start_kb(),
@@ -90,7 +86,7 @@ async def help_about_cb(callback: types.CallbackQuery):
     await callback.answer()
 
 
-# ================== AGAIN BUTTON ==================
+# ================== AGAIN ==================
 
 
 @dp.callback_query(lambda c: c.data == "again")
@@ -100,9 +96,7 @@ async def again_cb(callback: types.CallbackQuery):
     except:
         pass
 
-    await bot.send_message(
-        callback.from_user.id, "🔗 Просто пришли новую ссылку на видео:"
-    )
+    await bot.send_message(callback.from_user.id, "🔗 Просто пришли новую ссылку:")
     await callback.answer()
 
 
@@ -138,9 +132,7 @@ async def handle_link(msg: types.Message):
             duration = 9999
 
         if duration > 180:
-            await status_msg.edit_text(
-                "⚠️ Поддерживаются только короткие видео (до 3 минут)."
-            )
+            await status_msg.edit_text("⚠️ Только видео до 3 минут.")
             return
 
     except:
@@ -149,7 +141,7 @@ async def handle_link(msg: types.Message):
 
     # ================= DOWNLOAD =================
 
-    await status_msg.edit_text("📥 Скачиваю видео...")
+    await status_msg.edit_text("📥 Скачиваю ...")
 
     file_id = str(uuid.uuid4())
     output_template = os.path.join(DOWNLOAD_DIR, f"{file_id}.%(ext)s")
@@ -159,7 +151,7 @@ async def handle_link(msg: types.Message):
         "-m",
         "yt_dlp",
         "-f",
-        "bv*+ba/b",
+        "bestvideo*+bestaudio/best",
         "--merge-output-format",
         "mp4",
         "--recode-video",
@@ -178,7 +170,7 @@ async def handle_link(msg: types.Message):
         if process.returncode != 0:
             print(process.stdout)
             print(process.stderr)
-            await status_msg.edit_text("❌ Ошибка при скачивании видео.")
+            await status_msg.edit_text("❌ Ошибка при скачивании.")
             return
 
     except Exception as e:
@@ -195,7 +187,7 @@ async def handle_link(msg: types.Message):
             break
 
     if not downloaded_file:
-        await status_msg.edit_text("❌ Не удалось получить mp4 файл.")
+        await status_msg.edit_text("❌ Не удалось получить MP4.")
         return
 
     # ================= SIZE CHECK =================
@@ -203,7 +195,7 @@ async def handle_link(msg: types.Message):
     size_mb = os.path.getsize(downloaded_file) / (1024 * 1024)
     if size_mb > 48:
         os.remove(downloaded_file)
-        await status_msg.edit_text("⚠️ Видео слишком большое для Telegram.")
+        await status_msg.edit_text("⚠️ Видео слишком большое.")
         return
 
     # ================= SEND =================
@@ -212,7 +204,7 @@ async def handle_link(msg: types.Message):
 
     await msg.answer_video(
         types.FSInputFile(downloaded_file),
-        caption="💾 Скачано через @TikTokDBroBot\n⬇️ Скачивай видео без водяных знаков",
+        caption="💾 Скачано через @TikTokDBroBot",
         supports_streaming=True,
         request_timeout=1200,
     )
@@ -223,12 +215,10 @@ async def handle_link(msg: types.Message):
         pass
 
     await msg.answer(
-        "✅ *Готово!*\n\n📥 Видео скачано со звуком.",
+        "✅ *Готово!*\n\n🎬 Видео скачано со звуком.",
         reply_markup=after_download_kb(),
         parse_mode="Markdown",
     )
-
-    # ================= CLEAN =================
 
     try:
         os.remove(downloaded_file)
@@ -246,5 +236,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
