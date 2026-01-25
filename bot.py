@@ -41,7 +41,7 @@ async def start(msg: types.Message):
         "Поддержка:\n"
         "• TikTok\n"
         "• YouTube Shorts\n"
-        "• Reels\n\n"
+        "• Instagram Reels\n\n"
         "Просто пришли ссылку 👇",
         parse_mode="Markdown",
         reply_markup=start_kb()
@@ -70,7 +70,7 @@ async def handle_link(msg: types.Message):
         await msg.answer("❌ Это не ссылка")
         return
 
-    status = await msg.answer("⏳ Скачиваю...")
+    status = await msg.answer("⏳ Скачиваю ...")
 
     uid = str(uuid.uuid4())
     output_template = os.path.join(DOWNLOAD_DIR, f"{uid}.%(ext)s")
@@ -79,6 +79,8 @@ async def handle_link(msg: types.Message):
         "python", "-m", "yt_dlp",
         "-f", "bestvideo*+bestaudio/best",
         "--merge-output-format", "mp4",
+        "--recode-video", "mp4",
+        "--postprocessor-args", "ffmpeg:-c:v copy -c:a aac",
         "--no-playlist",
         "-o", output_template,
         url
@@ -114,11 +116,11 @@ async def handle_link(msg: types.Message):
 
     await msg.answer_video(
         types.FSInputFile(final_file),
-        caption="✅ Готово! Видео со звуком.",
+        caption="✅ Готово !",
         supports_streaming=True
     )
 
-    await msg.answer("⬇️ Хочешь ещё?", reply_markup=after_download_kb())
+    await msg.answer("⬇️ Хочешь ещё ?", reply_markup=after_download_kb())
 
     try:
         await status.delete()
