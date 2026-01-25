@@ -15,7 +15,6 @@ dp = Dispatcher()
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-
 # ================== KEYBOARDS ==================
 
 def start_kb():
@@ -27,7 +26,6 @@ def start_kb():
         ]
     )
 
-
 def after_download_kb():
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -35,7 +33,6 @@ def after_download_kb():
             [InlineKeyboardButton(text="⭐ Поделиться ботом", switch_inline_query="")],
         ]
     )
-
 
 # ================== START ==================
 
@@ -52,7 +49,6 @@ async def start(msg: types.Message):
         parse_mode="Markdown",
     )
 
-
 # ================== HELP ==================
 
 @dp.callback_query(lambda c: c.data == "help_download")
@@ -60,29 +56,25 @@ async def help_download_cb(callback: types.CallbackQuery):
     await callback.message.edit_text(
         "⬇️ *Как скачать видео:*\n\n"
         "1️⃣ Скопируй ссылку\n"
-        "2️⃣ Вставь её в чат\n"
-        "3️⃣ Подожди\n"
-        "4️⃣ Получи готовое видео\n\n"
-        "⚡ Всё просто!",
+        "2️⃣ Вставь в чат\n"
+        "3️⃣ Получи видео СО ЗВУКОМ\n\n"
+        "⚡ Просто и быстро!",
         parse_mode="Markdown",
         reply_markup=start_kb(),
     )
     await callback.answer()
-
 
 @dp.callback_query(lambda c: c.data == "help_about")
 async def help_about_cb(callback: types.CallbackQuery):
     await callback.message.edit_text(
         "ℹ️ *О боте:*\n\n"
-        "🤖 TikTokDBroBot скачивает видео со звуком.\n\n"
+        "🤖 TikTokDBroBot — скачивает видео.\n\n"
         "✅ TikTok / Shorts / Reels\n"
-        "📏 До 3 минут\n\n"
-        "🚀 Просто пришли ссылку!",
+        "📏 До 3 минут\n",
         parse_mode="Markdown",
         reply_markup=start_kb(),
     )
     await callback.answer()
-
 
 # ================== AGAIN ==================
 
@@ -95,7 +87,6 @@ async def again_cb(callback: types.CallbackQuery):
 
     await bot.send_message(callback.from_user.id, "🔗 Пришли новую ссылку:")
     await callback.answer()
-
 
 # ================== MAIN ==================
 
@@ -112,6 +103,29 @@ async def handle_link(msg: types.Message):
 
     status_msg = await msg.answer("⏳ Проверяю видео...")
 
+    # ================= CHECK DURATION =================
+
+    try:
+        check = subprocess.run(
+            ["yt-dlp", "--print", "%(duration)s", url],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        try:
+            duration = int(float(check.stdout.strip()))
+        except:
+            duration = 9999
+
+        if duration > 180:
+            await status_msg.edit_text("⚠️ Видео слишком длинное (больше 3 минут).")
+            return
+
+    except:
+        await status_msg.edit_text("❌ Не удалось проверить видео.")
+        return
+
     # ================= DOWNLOAD =================
 
     await status_msg.edit_text("📥 Скачиваю видео...")
@@ -119,36 +133,42 @@ async def handle_link(msg: types.Message):
     file_id = str(uuid.uuid4())
     output_template = os.path.join(DOWNLOAD_DIR, f"{file_id}.%(ext)s")
 
-    cmd = [
-        "python",
-        "-m",
-        "yt_dlp",
-        "-f",
-        "bv*+ba/b",
-        "--merge-output-format",
-        "mp4",
-        "--recode-video",
-        "mp4",
-        "--postprocessor-args",
-        "ffmpeg:-c:v copy -c:a aac",
-        "--no-playlist",
-        "-o",
-        output_template,
-        url,
-    ]
+    is_tiktok = "tiktok.com" in url.lower()
+
+    if is_tiktok:
+        # TikTok — качаем как есть
+        cmd = [
+            "yt-dlp",
+            "--no-playlist",
+            "--merge-output-format", "mp4",
+            "-o", output_template,
+            url,
+        ]
+    else:
+        # YouTube Shorts / Reels — ВСЕГДА склеиваем
+        cmd = [
+            "yt-dlp",
+            "-f", "bv*+ba/b",
+            "--merge-output-format", "mp4",
+            "--recode-video", "mp4",
+            "--postprocessor-args", "ffmpeg:-c:v copy -c:a aac",
+            "--no-playlist",
+            "-o", output_template,
+            url,
+        ]
 
     try:
         process = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
         if process.returncode != 0:
-            print(process.stdout)
-            print(process.stderr)
+            print("STDOUT:", process.stdout)
+            print("STDERR:", process.stderr)
             await status_msg.edit_text("❌ Ошибка при скачивании.")
             return
 
     except Exception as e:
         print("DOWNLOAD ERROR:", e)
-        await status_msg.edit_text("❌ Ошибка загрузки.")
+        await status_msg.edit_text("❌ Ошибка при скачивании.")
         return
 
     # ================= FIND FILE =================
@@ -160,7 +180,15 @@ async def handle_link(msg: types.Message):
             break
 
     if not downloaded_file:
-        await status_msg.edit_text("❌ Не удалось собрать MP4.")
+        await status_msg.edit_text("❌ Не удалось получить mp4 файл.")
+        return
+
+    # ================= SIZE CHECK =================
+
+    size_mb = os.path.getsize(downloaded_file) / (1024 * 1024)
+    if size_mb > 48:
+        os.remove(downloaded_file)
+        await status_msg.edit_text("⚠️ Видео слишком большое.")
         return
 
     # ================= SEND =================
@@ -169,7 +197,7 @@ async def handle_link(msg: types.Message):
 
     await msg.answer_video(
         types.FSInputFile(downloaded_file),
-        caption="💾 Скачано через @TikTokDBroBot\n",
+        caption="💾 Скачано через @TikTokDBroBot\n⬇️ Без водяных знаков",
         supports_streaming=True,
         request_timeout=1200,
     )
@@ -180,7 +208,7 @@ async def handle_link(msg: types.Message):
         pass
 
     await msg.answer(
-        "✅ *Готово!*\n\n🎬 Видео скачано",
+        "✅ *Готово!*\n\n🔊 Видео отправлено.",
         reply_markup=after_download_kb(),
         parse_mode="Markdown",
     )
@@ -192,14 +220,11 @@ async def handle_link(msg: types.Message):
     except:
         pass
 
-
 # ================== RUN ==================
 
 async def main():
     print("Video Bot started...")
     await dp.start_polling(bot)
 
-
 if __name__ == "__main__":
     asyncio.run(main())
-
