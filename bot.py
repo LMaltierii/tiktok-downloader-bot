@@ -82,7 +82,7 @@ async def help_about_cb(callback: types.CallbackQuery):
         "• YouTube Shorts\n"
         "• Reels\n\n"
         "📏 Ограничения:\n"
-        "• Видео до 3 минут\n \n"
+        "• Видео до 3 минут\n\n"
         "🚀 Просто вставь ссылку!",
         parse_mode="Markdown",
         reply_markup=start_kb(),
@@ -149,48 +149,28 @@ async def handle_link(msg: types.Message):
 
     # ================= DOWNLOAD =================
 
-    await status_msg.edit_text("📥 Скачиваю и склеиваю видео...")
+    await status_msg.edit_text("📥 Скачиваю видео...")
 
     file_id = str(uuid.uuid4())
     output_template = os.path.join(DOWNLOAD_DIR, f"{file_id}.%(ext)s")
 
-    is_tiktok = "tiktok.com" in url.lower()
-
-    if is_tiktok:
-        cmd = [
-            "python",
-            "-m",
-            "yt_dlp",
-            "--no-playlist",
-            "--merge-output-format",
-            "mp4",
-            "--recode-video",
-            "mp4",
-            "--user-agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "--referer",
-            "https://www.tiktok.com/",
-            "-o",
-            output_template,
-            url,
-        ]
-        cmd = [
-            "python",
-            "-m",
-            "yt_dlp",
-            "-f",
-            "bv*+ba/b",
-            "--merge-output-format",
-            "mp4",
-            "--recode-video",
-            "mp4",
-            "--postprocessor-args",
-            "ffmpeg:-c:v copy -c:a aac",
-            "--no-playlist",
-            "-o",
-            output_template,
-            url,
-        ]
+    cmd = [
+        "python",
+        "-m",
+        "yt_dlp",
+        "-f",
+        "bv*+ba/b",
+        "--merge-output-format",
+        "mp4",
+        "--recode-video",
+        "mp4",
+        "--postprocessor-args",
+        "ffmpeg:-c:v copy -c:a aac",
+        "--no-playlist",
+        "-o",
+        output_template,
+        url,
+    ]
 
     try:
         process = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
@@ -266,3 +246,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
