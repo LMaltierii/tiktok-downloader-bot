@@ -1,9 +1,8 @@
 import asyncio
 import os
 import uuid
-import subprocess
-
-from aiogram import Bot, Dispatcher, types
+import time
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -15,161 +14,201 @@ dp = Dispatcher()
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-# ================== KEYBOARDS ==================
+# ================== CONFIG ==================
 
-def start_kb():
+MAX_PARALLEL_DOWNLOADS = 2   
+DOWNLOAD_TIMEOUT = 600       
+MAX_FILE_MB = 49
+
+download_semaphore = asyncio.Semaphore(MAX_PARALLEL_DOWNLOADS)
+
+# ================= UI =================
+
+def main_kb():
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⬇️ Как скачать", callback_data="help_download")],
-            [InlineKeyboardButton(text="ℹ️ О боте", callback_data="help_about")],
+            [InlineKeyboardButton(text="⬇️ Скачать видео", callback_data="download")],
+            [InlineKeyboardButton(text="⭐ Поделиться ботом", switch_inline_query="")],
+            [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")],
+        ]
+    )
+
+def after_kb():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⬇️ Скачать ещё", callback_data="download")],
             [InlineKeyboardButton(text="⭐ Поделиться ботом", switch_inline_query="")],
         ]
     )
 
-def after_download_kb():
+def back_kb():
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⬇️ Скачать ещё", callback_data="again")],
-            [InlineKeyboardButton(text="⭐ Поделиться ботом", switch_inline_query="")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")]
         ]
     )
 
-# ================== START ==================
+# ================= SCREENS =================
+
+def screen_home():
+    return (
+        "🎬 *TikTokBroBot*\n\n"
+        "Пришли ссылку на видео и я скачаю его.\n\n"
+        "Поддержка:\n"
+        "• TikTok\n"
+        "• YouTube Shorts\n"
+        "• Reels"
+    )
+
+def screen_wait_link():
+    return (
+        "🔗 *Пришли ссылку на видео*\n\n"
+        "Я поддерживаю:\n"
+        "• TikTok\n"
+        "• YouTube Shorts\n"
+        "• Reels"
+    )
+
+# ================= STATE =================
+
+waiting_users = set()
+active_users = set()
+
+# ================= START =================
 
 @dp.message(Command("start"))
 async def start(msg: types.Message):
-    await msg.answer(
-        "👋 *Добро пожаловать в TikTokDBroBot!*\n\n"
-        "🎬 Я скачиваю видео из:\n"
-        "• TikTok\n"
-        "• YouTube Shorts\n"
-        "• Reels\n\n"
-        "Просто пришли ссылку 👇",
-        reply_markup=start_kb(),
+    await msg.answer(screen_home(), reply_markup=main_kb(), parse_mode="Markdown")
+
+# ================= CALLBACKS =================
+
+@dp.callback_query(F.data == "download")
+async def download_cb(cb: types.CallbackQuery):
+    waiting_users.add(cb.from_user.id)
+    await cb.message.edit_text(screen_wait_link(), reply_markup=back_kb(), parse_mode="Markdown")
+    await cb.answer()
+
+@dp.callback_query(F.data == "back")
+async def back_cb(cb: types.CallbackQuery):
+    waiting_users.discard(cb.from_user.id)
+    await cb.message.edit_text(screen_home(), reply_markup=main_kb(), parse_mode="Markdown")
+    await cb.answer()
+
+@dp.callback_query(F.data == "help")
+async def help_cb(cb: types.CallbackQuery):
+    await cb.message.edit_text(
+        "ℹ️ *Как пользоваться ботом:*\n\n"
+        "1. Нажми «Скачать видео»\n"
+        "2. Пришли ссылку\n"
+        "3. Получи файл\n\n"
+        "⚡ Быстро и просто.",
+        reply_markup=back_kb(),
         parse_mode="Markdown",
     )
+    await cb.answer()
 
-# ================== HELP ==================
+# ================= UTILS =================
 
-@dp.callback_query(lambda c: c.data == "help_download")
-async def help_download_cb(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "⬇️ *Как скачать видео:*\n\n"
-        "1️⃣ Скопируй ссылку\n"
-        "2️⃣ Вставь в чат\n"
-        "3️⃣ Получи видео СО ЗВУКОМ\n\n"
-        "⚡ Просто и быстро!",
-        parse_mode="Markdown",
-        reply_markup=start_kb(),
-    )
-    await callback.answer()
+def detect_platform(url: str) -> str:
+    url = url.lower()
+    if "tiktok" in url:
+        return "TikTok"
+    if "youtube" in url or "youtu.be" in url:
+        return "YouTube"
+    if "instagram" in url or "reels" in url:
+        return "Instagram"
+    return "Видео"
 
-@dp.callback_query(lambda c: c.data == "help_about")
-async def help_about_cb(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "ℹ️ *О боте:*\n\n"
-        "🤖 TikTokDBroBot — скачивает видео.\n\n"
-        "✅ TikTok / Shorts / Reels\n"
-        "📏 До 3 минут\n",
-        parse_mode="Markdown",
-        reply_markup=start_kb(),
-    )
-    await callback.answer()
+# ================= CLEANUP TASK =================
 
-# ================== AGAIN ==================
+async def cleanup_loop():
+    while True:
+        now = time.time()
+        for f in os.listdir(DOWNLOAD_DIR):
+            path = os.path.join(DOWNLOAD_DIR, f)
+            try:
+                if os.path.isfile(path):
+                    if now - os.path.getmtime(path) > 3600:
+                        os.remove(path)
+                        print("[CLEANUP] removed", path)
+            except:
+                pass
+        await asyncio.sleep(1800)
 
-@dp.callback_query(lambda c: c.data == "again")
-async def again_cb(callback: types.CallbackQuery):
-    try:
-        await callback.message.delete()
-    except:
-        pass
-
-    await bot.send_message(callback.from_user.id, "🔗 Пришли новую ссылку:")
-    await callback.answer()
-
-# ================== MAIN ==================
+# ================= MAIN =================
 
 @dp.message()
 async def handle_link(msg: types.Message):
-    if not msg.text:
+    user_id = msg.from_user.id
+
+    if user_id not in waiting_users:
+        return
+
+    if user_id in active_users:
+        await msg.answer("⏳ Подожди, предыдущее видео ещё обрабатывается.")
         return
 
     url = msg.text.strip()
-
     if not url.startswith("http"):
         await msg.answer("❌ Это не ссылка.")
         return
 
-    status_msg = await msg.answer("⏳ Проверяю видео...")
+    waiting_users.discard(user_id)
+    active_users.add(user_id)
 
-    # ================= CHECK DURATION =================
+    platform = detect_platform(url)
 
-    try:
-        check = subprocess.run(
-            ["yt-dlp", "--print", "%(duration)s", url],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-
-        try:
-            duration = int(float(check.stdout.strip()))
-        except:
-            duration = 9999
-
-        if duration > 180:
-            await status_msg.edit_text("⚠️ Видео слишком длинное (больше 3 минут).")
-            return
-
-    except:
-        await status_msg.edit_text("❌ Не удалось проверить видео.")
-        return
-
-    # ================= DOWNLOAD =================
-
-    await status_msg.edit_text("📥 Скачиваю видео...")
+    status = await msg.answer(f"🔎 Анализирую ссылку ({platform})...")
 
     file_id = str(uuid.uuid4())
     output_template = os.path.join(DOWNLOAD_DIR, f"{file_id}.%(ext)s")
 
-    is_tiktok = "tiktok.com" in url.lower()
+    cmd = [
+        "python", "-m", "yt_dlp",
+        "-f", "bv*+ba/b",
+        "--merge-output-format", "mp4",
+        "--concurrent-fragments", "4",
+        "--no-playlist",
+        "-o", output_template,
+        url
+    ]
 
-    if is_tiktok:
-        # TikTok — качаем как есть
-        cmd = [
-            "yt-dlp",
-            "--no-playlist",
-            "--merge-output-format", "mp4",
-            "-o", output_template,
-            url,
-        ]
-    else:
-        # YouTube Shorts / Reels — ВСЕГДА склеиваем
-        cmd = [
-            "yt-dlp",
-            "-f", "bv*+ba/b",
-            "--merge-output-format", "mp4",
-            "--recode-video", "mp4",
-            "--postprocessor-args", "ffmpeg:-c:v copy -c:a aac",
-            "--no-playlist",
-            "-o", output_template,
-            url,
-        ]
+    print(f"[DOWNLOAD] user={user_id} platform={platform}")
 
     try:
-        process = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        async with download_semaphore:
+            await status.edit_text("📥 Скачиваю видео...")
 
-        if process.returncode != 0:
-            print("STDOUT:", process.stdout)
-            print("STDERR:", process.stderr)
-            await status_msg.edit_text("❌ Ошибка при скачивании.")
-            return
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=DOWNLOAD_TIMEOUT)
+            except asyncio.TimeoutError:
+                process.kill()
+                await status.edit_text("⏰ Таймаут при скачивании.", reply_markup=main_kb())
+                return
+
+            if process.returncode != 0:
+                print(stdout.decode())
+                print(stderr.decode())
+                await status.edit_text(
+                    "⚠️ *Не удалось скачать видео.*",
+                    parse_mode="Markdown",
+                    reply_markup=main_kb()
+                )
+                return
 
     except Exception as e:
-        print("DOWNLOAD ERROR:", e)
-        await status_msg.edit_text("❌ Ошибка при скачивании.")
+        print("ERROR:", e)
+        await status.edit_text("❌ Ошибка при обработке видео.", reply_markup=main_kb())
         return
+
+    finally:
+        active_users.discard(user_id)
 
     # ================= FIND FILE =================
 
@@ -180,50 +219,43 @@ async def handle_link(msg: types.Message):
             break
 
     if not downloaded_file:
-        await status_msg.edit_text("❌ Не удалось получить mp4 файл.")
+        await status.edit_text("❌ Не удалось получить файл.", reply_markup=main_kb())
         return
 
     # ================= SIZE CHECK =================
 
-    size_mb = os.path.getsize(downloaded_file) / (1024 * 1024)
-    if size_mb > 48:
+    size_mb = os.path.getsize(downloaded_file) / 1024 / 1024
+    if size_mb > MAX_FILE_MB:
+        await status.edit_text("❌ Видео слишком большое для отправки.")
         os.remove(downloaded_file)
-        await status_msg.edit_text("⚠️ Видео слишком большое.")
         return
 
     # ================= SEND =================
 
-    await status_msg.edit_text("📤 Отправляю видео...")
+    await status.edit_text("📤 Отправляю файл...")
 
     await msg.answer_video(
         types.FSInputFile(downloaded_file),
-        caption="💾 Скачано через @TikTokDBroBot\n⬇️ Без водяных знаков",
-        supports_streaming=True,
-        request_timeout=1200,
+        caption="💾 Скачано через @TikTokDBroBot",
+        supports_streaming=True
     )
 
-    try:
-        await status_msg.delete()
-    except:
-        pass
-
-    await msg.answer(
-        "✅ *Готово!*\n\n🔊 Видео отправлено.",
-        reply_markup=after_download_kb(),
-        parse_mode="Markdown",
+    await status.edit_text(
+        "✅ *Готово!*\n\nВидео успешно скачано.",
+        reply_markup=after_kb(),
+        parse_mode="Markdown"
     )
-
-    # ================= CLEAN =================
 
     try:
         os.remove(downloaded_file)
     except:
         pass
 
-# ================== RUN ==================
+# ================= RUN =================
 
 async def main():
-    print("Video Bot started...")
+    print("TikTokDBroBot PRODUCTION started...")
+    asyncio.create_task(cleanup_loop())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
